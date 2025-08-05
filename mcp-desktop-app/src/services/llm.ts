@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { Tool, CallToolResponse } from '../types/mcp';
 
 const openai = new OpenAI({
-  apiKey: 'your-openai-api-key-here', // Replace with your OpenAI API key
+  apiKey: process.env.OPENAI_API_KEY || 'your-openai-api-key-here', // Set your OpenAI API key
   dangerouslyAllowBrowser: true
 });
 
@@ -12,7 +12,142 @@ export interface ToolSelection {
   reasoning: string;
 }
 
+export interface ToolChainStep {
+  toolName: string;
+  arguments: any;
+  reasoning: string;
+  dependsOn?: string; // ID of previous step this depends on
+}
+
+export interface ToolChainPlan {
+  steps: ToolChainStep[];
+  isChain: boolean;
+  reasoning: string;
+}
+
 export class LLMService {
+  async planToolChain(userMessage: string, availableTools: Tool[]): Promise<ToolChainPlan> {
+    const toolDescriptions = availableTools.map(tool => ({
+      name: tool.name,
+      description: tool.description || 'No description available',
+      inputSchema: tool.input_schema || { type: 'object', properties: {}, required: [] }
+    }));
+
+    const prompt = `You are an expert ServiceNow workflow designer. Analyze the user's request and determine if it requires multiple tools to be executed in sequence (tool chaining) or just a single tool.
+
+User Request: "${userMessage}"
+
+Available Tools:
+${toolDescriptions.map(tool => `
+- ${tool.name}: ${tool.description}
+  Required fields: ${JSON.stringify(tool.input_schema?.required || [])}
+  Properties: ${JSON.stringify(tool.input_schema?.properties || {})}
+`).join('')}
+
+For multi-step requests that require tool chaining, respond with:
+{
+  "isChain": true,
+  "reasoning": "This request requires multiple steps: [list steps]",
+  "steps": [
+    {
+      "toolName": "first_tool",
+      "arguments": {...arguments...},
+      "reasoning": "Why this tool is needed first",
+      "dependsOn": null
+    },
+    {
+      "toolName": "second_tool", 
+      "arguments": {...arguments using {{STEP_1_RESULT}} for previous results...},
+      "reasoning": "Why this tool is needed second",
+      "dependsOn": "STEP_1"
+    }
+  ]
+}
+
+For single-step requests, respond with:
+{
+  "isChain": false,
+  "reasoning": "This can be accomplished with a single tool",
+  "steps": [
+    {
+      "toolName": "tool_name",
+      "arguments": {...arguments...},
+      "reasoning": "Why this tool was selected"
+    }
+  ]
+}
+
+Guidelines:
+- Flow creation workflows typically need: create-flow → create-flow-trigger → add-*-action
+- Use {{STEP_X_RESULT}} placeholders for values from previous steps (e.g., flow_id from step 1)
+- Password reset flows should trigger on record creation/update
+- Common trigger types: record_created, record_updated, scheduled
+- Action order should increment (100, 200, 300, etc.)
+
+RESPOND ONLY WITH VALID JSON:`;
+
+    try {
+      console.log('🧠 LLM Planning - User Request:', userMessage);
+      console.log('🧠 LLM Planning - Available Tools:', toolDescriptions.length);
+      
+      // Debug: Show specific business rule tool schema if user mentions business rule
+      if (userMessage.toLowerCase().includes('business rule')) {
+        const businessRuleTool = availableTools.find(t => t.name.includes('business-rule'));
+        if (businessRuleTool) {
+          console.log('🔍 Business Rule Tool Found:', {
+            name: businessRuleTool.name,
+            description: businessRuleTool.description,
+            schema: businessRuleTool.input_schema
+          });
+        } else {
+          console.log('❌ No business rule tool found in available tools');
+          console.log('Available tool names:', availableTools.map(t => t.name));
+        }
+      }
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are a ServiceNow workflow expert that plans multi-step tool execution chains. Always respond with valid JSON only."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.1,
+        max_tokens: 1000
+      });
+
+      const response = completion.choices[0]?.message?.content?.trim();
+      if (!response) {
+        throw new Error('No response from OpenAI');
+      }
+
+      console.log('🤖 LLM Raw Response:', response);
+
+      try {
+        const parsed = JSON.parse(response);
+        console.log('✅ LLM Parsed Plan:', parsed);
+        return parsed;
+      } catch (parseError) {
+        console.error('Failed to parse LLM chain response:', response);
+        throw new Error('Invalid JSON response from LLM');
+      }
+    } catch (error) {
+      console.error('LLM tool chain planning failed:', error);
+      // Fallback to single tool selection
+      const singleTool = await this.selectTool(userMessage, availableTools);
+      return {
+        isChain: false,
+        reasoning: 'Fallback to single tool due to LLM error',
+        steps: [singleTool]
+      };
+    }
+  }
+
   async selectTool(userMessage: string, availableTools: Tool[]): Promise<ToolSelection> {
     const toolDescriptions = availableTools.map(tool => ({
       name: tool.name,
@@ -27,8 +162,8 @@ User Request: "${userMessage}"
 Available Tools:
 ${toolDescriptions.map(tool => `
 - ${tool.name}: ${tool.description}
-  Required fields: ${JSON.stringify(tool.inputSchema?.required || [])}
-  Properties: ${JSON.stringify(tool.inputSchema?.properties || {})}
+  Required fields: ${JSON.stringify(tool.input_schema?.required || [])}
+  Properties: ${JSON.stringify(tool.input_schema?.properties || {})}
 `).join('')}
 
 Based on the user's request, respond with a JSON object containing:
@@ -82,6 +217,54 @@ RESPOND ONLY WITH VALID JSON:`;
       console.error('LLM tool selection failed:', error);
       // Fallback to simple pattern matching
       return this.fallbackToolSelection(userMessage, availableTools);
+    }
+  }
+
+  async processToolChainResponse(
+    userMessage: string,
+    chainResults: Array<{step: number, toolName: string, response: CallToolResponse, arguments: any}>
+  ): Promise<string> {
+    const resultsText = chainResults.map(result => {
+      const output = result.response.content.map(c => c.text).filter(Boolean).join('\n');
+      return `Step ${result.step} (${result.toolName}): ${output}`;
+    }).join('\n\n');
+
+    const prompt = `You are a helpful ServiceNow assistant. The user requested: "${userMessage}"
+
+This required a multi-step workflow that was successfully completed. Here are the results of each step:
+
+${resultsText}
+
+Provide a comprehensive summary that:
+1. Confirms what was accomplished
+2. Highlights key details from each step
+3. Explains how the steps worked together
+4. Uses natural language (not raw data dumps)
+
+Keep your response clear and professional.`;
+
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful ServiceNow assistant that summarizes multi-step workflow results for users."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 500
+      });
+
+      const response = completion.choices[0]?.message?.content?.trim();
+      return response || `✅ **Multi-step workflow completed successfully**\n\n${resultsText}`;
+    } catch (error) {
+      console.error('LLM chain response processing failed:', error);
+      return `✅ **Multi-step workflow completed successfully**\n\n${resultsText}`;
     }
   }
 

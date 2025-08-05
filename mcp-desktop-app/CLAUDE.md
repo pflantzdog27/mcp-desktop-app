@@ -237,6 +237,55 @@ RUST_LOG=debug npm run tauri dev
 
 ## Recent Developments
 
+### Latest Feature Additions (January 2025)
+
+#### Customer Update Tracking Implementation
+**Major Feature**: Comprehensive update set and application scope management system.
+
+**New Components Added**:
+- `SettingsService` - Persistent configuration management for update sets and scopes
+- `UpdateSetDialog` - Interactive dialog for selecting/creating update sets
+- `ApplicationScopeDialog` - Scope selection with ServiceNow integration  
+- `SettingsPage` - Full settings management interface
+- Multi-step tool chain execution workflow
+
+**Key Capabilities**:
+- ✅ Automatic update set prompting for ServiceNow operations
+- ✅ Application scope management with proper scoping
+- ✅ Settings persistence across sessions
+- ✅ Real-time update set and scope fetching from ServiceNow
+- ✅ Tool chain execution with proper context management
+
+**User Experience Improvements**:
+- Enhanced chat interface with auto-resizing textarea
+- Settings button with comprehensive configuration options
+- Test tools functionality for ServiceNow state verification
+- Keyboard shortcuts (Enter to send, Shift+Enter for new line)
+
+**Technical Architecture**:
+```typescript
+// Settings persistence
+class SettingsService {
+  private settings = {
+    updateSet: { currentUpdateSet: null, locked: false },
+    applicationScope: { currentScope: null, locked: false }
+  };
+}
+
+// Multi-step workflow execution
+interface ToolChainPlan {
+  steps: ToolChainStep[];
+  isChain: boolean;
+  reasoning: string;
+}
+```
+
+**Integration Points**:
+- ServiceNow update set creation and management
+- Application scope setting with proper validation
+- Customer updates now properly tracked in designated update sets
+- Settings locked state prevents accidental changes
+
 ### Latest Bug Fixes and Improvements (January 2025)
 
 #### Critical LLM Integration Bug Fix

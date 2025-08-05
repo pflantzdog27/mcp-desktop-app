@@ -10,6 +10,7 @@ interface Props {
 export const ChatInterface: React.FC<Props> = ({ messages, onSendMessage, isConnected }) => {
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -19,11 +20,26 @@ export const ChatInterface: React.FC<Props> = ({ messages, onSendMessage, isConn
     scrollToBottom();
   }, [messages]);
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [inputValue]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (inputValue.trim() && isConnected) {
       onSendMessage(inputValue.trim());
       setInputValue('');
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
     }
   };
 
@@ -89,13 +105,15 @@ export const ChatInterface: React.FC<Props> = ({ messages, onSendMessage, isConn
           backgroundColor: '#fff',
         }}
       >
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <input
-            type="text"
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          <textarea
+            ref={textareaRef}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder={isConnected ? "Type a message..." : "Connect to server first..."}
+            onKeyDown={handleKeyDown}
+            placeholder={isConnected ? "Type a message... (Enter to send, Shift+Enter for new line)" : "Connect to server first..."}
             disabled={!isConnected}
+            rows={1}
             style={{
               flex: 1,
               padding: '12px',
@@ -103,6 +121,13 @@ export const ChatInterface: React.FC<Props> = ({ messages, onSendMessage, isConn
               border: '1px solid #e0e0e0',
               borderRadius: '4px',
               outline: 'none',
+              resize: 'none',
+              fontFamily: 'inherit',
+              lineHeight: '1.5',
+              minHeight: '44px',
+              maxHeight: '120px',
+              overflowY: 'auto',
+              wordWrap: 'break-word',
             }}
           />
           <button
@@ -117,6 +142,7 @@ export const ChatInterface: React.FC<Props> = ({ messages, onSendMessage, isConn
               border: 'none',
               borderRadius: '4px',
               cursor: isConnected ? 'pointer' : 'not-allowed',
+              marginBottom: '0',
             }}
           >
             Send
