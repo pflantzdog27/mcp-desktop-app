@@ -37,6 +37,7 @@ pub fn run() {
             start_mcp_server,
             discover_tools,
             get_connection_status,
+            call_tool,
             disconnect_server
         ])
         .run(tauri::generate_context!());

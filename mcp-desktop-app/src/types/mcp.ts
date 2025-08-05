@@ -26,3 +26,18 @@ export interface StartServerRequest {
   cwd?: string;
   env?: Record<string, string> | null;
 }
+
+export interface CallToolRequest {
+  tool_name: string;
+  arguments?: any;
+}
+
+export interface CallToolResponse {
+  content: ToolContent[];
+  is_error?: boolean;
+}
+
+export interface ToolContent {
+  type: string;
+  text?: string;
+}

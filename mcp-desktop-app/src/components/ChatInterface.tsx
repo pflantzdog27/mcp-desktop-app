@@ -35,6 +35,7 @@ export const ChatInterface: React.FC<Props> = ({ messages, onSendMessage, isConn
           overflowY: 'auto',
           padding: '16px',
           backgroundColor: '#fafafa',
+          minHeight: 0, // Ensures flex child can shrink below content size
         }}
       >
         {messages.length === 0 ? (
