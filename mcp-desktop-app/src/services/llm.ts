@@ -17,7 +17,7 @@ export class LLMService {
     const toolDescriptions = availableTools.map(tool => ({
       name: tool.name,
       description: tool.description || 'No description available',
-      inputSchema: tool.input_schema
+      inputSchema: tool.input_schema || { type: 'object', properties: {}, required: [] }
     }));
 
     const prompt = `You are an expert ServiceNow assistant. Analyze the user's request and select the most appropriate tool with correct arguments.
@@ -27,8 +27,8 @@ User Request: "${userMessage}"
 Available Tools:
 ${toolDescriptions.map(tool => `
 - ${tool.name}: ${tool.description}
-  Required fields: ${JSON.stringify(tool.inputSchema.required || [])}
-  Properties: ${JSON.stringify(tool.inputSchema.properties || {})}
+  Required fields: ${JSON.stringify(tool.inputSchema?.required || [])}
+  Properties: ${JSON.stringify(tool.inputSchema?.properties || {})}
 `).join('')}
 
 Based on the user's request, respond with a JSON object containing:

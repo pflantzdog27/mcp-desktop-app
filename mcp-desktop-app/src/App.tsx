@@ -171,6 +171,13 @@ function App() {
         return;
       }
 
+      // Debug: Log the tools structure
+      console.log('Available tools structure:', tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.input_schema
+      })));
+
       // Use LLM to intelligently select tool and extract arguments
       const toolSelection = await llmService.selectTool(content, tools);
       
